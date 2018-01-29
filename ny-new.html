@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <meta charset='utf-8'>
 <title>NY Counties</title>
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="https://unpkg.com/topojson-client@3"></script>
+<script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
 <link rel="stylesheet" href="css/tooltip-d3-js-map.css">
 <style>
 body {
@@ -12,22 +15,18 @@ body {
   top: 50px;
   left: 50px;
 }
-.pie_div {
-  position: absolute;
-  top: 50px;
-  right: 50px;
-}
 </style>
 
 <div id="tooltip" class="hidden">
     <div><h4><span id="county-name-tooltip">100</span> County</h4></div>
     <div><strong>Total Number of Conversations:</strong> <span id="conversations-tooltip">200</span></div>
+    <div><strong>Conversation Density:</strong> <span id="density-tooltip">200</span></div>
 </div>
 <div id="types">
 Pick a data type:<br/>
-<input id="radio" type="radio" value="total" name="type" checked="checked">Total Conversations</input><br/>
-<input id="radio" type="radio" value="percent" name="type">Conversations per Population</input>
-</div>
+<input id="radio" type="radio" value="total" name="type" >Total Conversations</input><br/>
+<input id="radio" type="radio" value="percent" name="type" checked="checked">Conversations per Population</input>
+
 <div class="info"></div>
 
 <div class="pie_div"></div>
@@ -42,14 +41,14 @@ Pick a data type:<br/>
 <div id="month_div"></div>
 <div id="day_div"></div>
 <div id="hour_div"></div>
-<script src="https://d3js.org/d3.v4.min.js"></script>
-<script src="https://unpkg.com/topojson-client@3"></script>
-<script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+
 <script>
   //h is 500 w is 960
 var svg = d3.select("svg");
 
 var defs = svg.select("defs");
+
+var type;
 
 // New York central state plane, EPSG: 2829
 // (central meridian = - 76.5833..., latitute of origin = 40)
@@ -60,9 +59,13 @@ var path = d3.geoPath()
     .projection(projection);
 
 //map color scale
-var threshold = d3.scaleThreshold()
+var totalScale = d3.scaleThreshold()
     .domain([1, 50, 150, 200, 500, 1000, 8000])
     .range(d3.schemePurples[9]);
+
+var percentScale = d3.scaleQuantize()
+    .domain([0,.007])
+    .range(d3.schemeBlues[8]);
 
 //bars color scale
 var threshold_year = d3.scaleThreshold()
@@ -188,6 +191,14 @@ function ready(error, us, population, nypop) {
 			    { key: "Sunday", value: d.StartDaySun }] )
   });
 
+  //get the data type radio button
+  var typeSelect = document.getElementsByName("type");
+  for (var i=0; i<typeSelect.length; i++){
+    if (typeSelect[i].checked){
+      type = typeSelect[i].value;
+    }
+  }
+
   // Convert the topojson to an array of GeoJSON counties
   var counties = topojson.feature(us, us.objects.counties);
 
@@ -200,28 +211,11 @@ function ready(error, us, population, nypop) {
   newyork.forEach(function(d, i) {
     var conversations = data.get(d.properties.GEOID); //number of conversations
     var ny_pops = popdata.get(d.properties.GEOID); //absolute population
-    var aland = d.properties.ALAND / 2589975.2356; // area in square miles
     d.convoDensity = conversations / ny_pops; // conversations per population
     d.conversation = conversations; // add conversations to this data structure
-    d.land = aland; // land aread (square miles)
-    console.log(d.convoDensity)
-    pieData.set(d.properties.GEOID, [{ key: "population", value: conversations / 100 },
-				     { key: "land", value: aland },
-				     { key: "density", value: d.populationDensity }] )
   })
 
-    projection.fitExtent([[10,10],[960 - 20, 500 - 20]], { type: "FeatureCollection", features: newyork });
-
-  // Drop-shadow styling (this is blurred shadow)
-  svg.append("use")
-      .attr("xlink:href", "#nation")
-      .attr("fill-opacity", 0.2)
-      .attr("filter", "url(#blur)");
-
-  // Drop-shadow styling (this is white overlay)
-  svg.append("use")
-      .attr("xlink:href", "#nation")
-      .attr("fill", "#fff");
+  projection.fitExtent([[10,10],[960 - 20, 500 - 20]], { type: "FeatureCollection", features: newyork });
 
   // Plot the individual counties
   svg.selectAll('path.county')
@@ -231,38 +225,38 @@ function ready(error, us, population, nypop) {
       .attr("class", "county")
       .attr("stroke", "#aaa")
       .attr("stroke-width", 1)
-      .attr("fill", function(d) { return threshold(d.conversation); })
+      .attr("fill", function(d) {
+        if(type=="total"){
+          return totalScale(d.conversation);
+        }else if(type=="percent"){
+          return percentScale(d.convoDensity);
+        }
+      })
       .on('mouseover', function(d, i) {
-	//addYear(year_data.get(d.properties.GEOID) );
-	//addMonth(month_data.get(d.properties.GEOID) );
-	addBar(year_data.get(d.properties.GEOID), "#bar_div")
-	addBar(month_data.get(d.properties.GEOID), "#month_div")
-	addBar(day_data.get(d.properties.GEOID), "#day_div")
-	addBar(hour_data.get(d.properties.GEOID), "#hour_div")
-	/*
-	d3.select(this).attr('stroke-width', 4).raise()
-	d3.select("#tooltip").style("top", d3.event.pageY + 20 + "px").style("left", d3.event.pageX + 20 + "px").select("#county-name-tooltip").text(d.properties.NAME)
-	d3.select("#conversations-tooltip").text(function() {
-	    return d3.format(",d")(d.population)
-	})
-	d3.select(".info").html(d.properties.NAME + " County"
-	    + "<br>Conversation Density: " + d3.format(",d")(d.populationDensity)
-	    + "<br>Conversations: " + d3.format(",d")(d.population)
-	    + "<br>Land (square miles): " + d3.format(",d")(d.land))
-	d3.select("#tooltip").classed("hidden", !1)
-	*/
+      	addBar(year_data.get(d.properties.GEOID), "#bar_div")
+      	addBar(month_data.get(d.properties.GEOID), "#month_div")
+      	addBar(day_data.get(d.properties.GEOID), "#day_div")
+      	addBar(hour_data.get(d.properties.GEOID), "#hour_div")
 
-	d3.select("#tooltip").style("top", d3.event.pageY + 10 + "px").style("left", d3.event.pageX + 10 + "px").select("#county-name-tooltip").text(d.properties.NAME),
-	d3.select("#conversations-tooltip").text(function() {
-	    return d3.format(",d")(d.conversation)
-	}),
-	d3.select("#tooltip").classed("hidden", !1)
+      	d3.select("#tooltip")
+          .style("top", d3.event.pageY + 10 + "px")
+          .style("left", d3.event.pageX + 10 + "px")
+          .select("#county-name-tooltip")
+          .text(d.properties.NAME),
+      	d3.select("#conversations-tooltip")
+          .text(function() {
+        	    return d3.format(",d")(d.conversation)
+        	}),
+        d3.select('#density-tooltip')
+          .text(function(){
+            return d3.format(".2%")(d.convoDensity);
+          })
+        d3.select("#tooltip").classed("hidden", !1)
       })
       .on('mouseout', function(d) {
       	d3.select(".info").html("")
       	d3.select(this).attr('stroke-width', 0.5)
       	d3.select("#tooltip").classed("hidden", !0)
-      	d3.select("#pie").selectAll(".arc").remove();
       	d3.select("#bar_div").selectAll("svg").remove();
       	d3.select("#month_div").selectAll("svg").remove();
       	d3.select("#day_div").selectAll("svg").remove();
@@ -270,7 +264,6 @@ function ready(error, us, population, nypop) {
       	d3.selectAll(".legend").remove();
       });
 }
-
 
 function addBar(data, type){
 
