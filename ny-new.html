@@ -1,9 +1,12 @@
 <!DOCTYPE html>
 <meta charset='utf-8'>
-<title>NY Counties</title>
+<title>CTL Rates in NY State</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
 <script src="https://d3js.org/d3.v4.min.js"></script>
 <script src="https://unpkg.com/topojson-client@3"></script>
 <script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/semantic-ui/2.2.14/semantic.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/semantic-ui/2.2.14/semantic.min.css">
 <link rel="stylesheet" href="css/tooltip-d3-js-map.css">
 <style>
 body {
@@ -17,15 +20,33 @@ body {
 }
 </style>
 
-<div id="tooltip" class="hidden">
+<div id="tooltip_county" class="hidden">
     <div><h4><span id="county-name-tooltip">100</span> County</h4></div>
     <div><strong>Total Number of Conversations:</strong> <span id="conversations-tooltip">200</span></div>
     <div><strong>Conversation Density:</strong> <span id="density-tooltip">200</span></div>
 </div>
+
+<div id="tooltip_zip" class="hidden">
+    <div><h4>Name:<span id="county-name-tooltip">100</span></h4></div>
+    <div><h4>Zip Code:<span id="zip-name-tooltip">100</span></h4></div>
+    <div><strong>Total Number of Conversations:</strong> <span id="conversations-tooltip-zip">200</span></div>
+    <div><strong>Conversation Density:</strong> <span id="density-tooltip-zip">200</span></div>
+    <div><strong>Population:</strong> <span id="pop-tooltip-zip">200</span></div>
+</div>
+
 <div id="types">
-Pick a data type:<br/>
-<input id="radio" type="radio" value="total" name="type" >Total Conversations</input><br/>
+<!-- Pick a data type:<br/> 
+<input id="radio" type="hidden"type="radio" value="total" name="type" >Total Conversations</input><br/>
 <input id="radio" type="radio" value="percent" name="type" checked="checked">Conversations per Population</input>
+-->
+<input id="radio" type="hidden" value="total" name="type" >
+<input id="radio" type="hidden" value="percent" name="type" checked="checked">
+</div>
+
+<div class="ui fluid two item menu">
+  <a class="item active" id="county_tab">County</a>
+  <a class="item" id="zip_tab">Zip Code</a>
+</div>
 
 <div class="info"></div>
 
@@ -48,6 +69,33 @@ var svg = d3.select("svg");
 
 var defs = svg.select("defs");
 
+// Make the population data easy to query by FIPS code
+var data = d3.map();
+var popdata = d3.map();
+var convo_data = d3.map();
+var year_data = d3.map();
+var month_data = d3.map();
+var day_data = d3.map();
+var hour_data = d3.map();
+
+// Make the population data easy to query by FIPS code
+var data_zip = d3.map();
+var popdata_zip = d3.map();
+var convo_data_zip = d3.map();
+var year_data_zip = d3.map();
+var month_data_zip = d3.map();
+var day_data_zip = d3.map();
+var hour_data_zip = d3.map();
+
+var pieData = d3.map();
+var pieData_zips = d3.map();
+
+var counties;
+var zips;
+
+var newyork
+var newyork_zip;
+
 var type;
 
 // New York central state plane, EPSG: 2829
@@ -67,6 +115,10 @@ var percentScale = d3.scaleQuantize()
     .domain([0,.007])
     .range(d3.schemeBlues[8]);
 
+var percentScaleZip = d3.scaleQuantize()
+    .domain([0,.008])
+    .range(d3.schemeBlues[8]);
+
 //bars color scale
 var threshold_year = d3.scaleThreshold()
     .domain([1, 5, 50, 100, 150, 200, 1000])
@@ -76,36 +128,64 @@ var threshold_year = d3.scaleThreshold()
 //var x = d3.scale.ordinal().rangeRoundBands([0, 960], .05);
 var x = d3.scaleBand().rangeRound([0, 960]).padding(0.05)
 
+// Configure the pie chart
+var color = d3.scaleOrdinal(d3.schemeCategory20);
+var radius = 80;
+var pie = d3.pie()
+    .sort(null)
+    .value(function(d) { return d.value; });
+
+var donutHoleRadius = radius * 0.5
+
+var arcPath = d3.arc()
+    .outerRadius(radius)
+    .innerRadius(radius - donutHoleRadius);
+
+var label = d3.arc()
+    .outerRadius(radius - 40)
+    .innerRadius(radius - 40);
+
+svg.append("g")
+    .attr('id', "pie")
+    .attr('transform', 'translate(' + [radius + 160, radius + 20] + ')')
+
 // Load the topojson and the population data
 var counties = "https://raw.githubusercontent.com/umbcvis/classes/master/class-14/counties.json";
+var zip = "zips_us_topo.json";
 var population = "CTL AGG County_4YearsOnlyv1.csv" ;
+var population_zip = "http://difranzo.com/ctl/CTL_AGG_ZIPCODE_4YearsOnly.csv" ;
 var nypop = "population.json" ;
+var nypop_zip = "nys_pop_zip.json" ;
 
 d3.queue()
   .defer(d3.json, counties)
+  .defer(d3.json, zip)
   .defer(d3.csv, population)
+  .defer(d3.csv, population_zip)
   .defer(d3.json, nypop)
+  .defer(d3.json, nypop_zip)
   .await(ready);
 //addLegend();
 
 // Wait for the data to arrive, then begin processing
-function ready(error, us, population, nypop) {
+function ready(error, us, us_zip, population, population_zip, nypop, nypop_zip) {
   if (error) throw error;
 
-  // Make the population data easy to query by FIPS code
-  var data = d3.map();
-  var popdata = d3.map();
-  var convo_data = d3.map();
-  var year_data = d3.map();
-  var month_data = d3.map();
-  var day_data = d3.map();
-  var hour_data = d3.map();
+
 
   nypop.forEach(function(d, i) {
     if (i === 0) return;  // skip the first line in the population data
     popdata.set(d[1] + d[2], +d[0]); //(FIPS, county overall population)
   });
 
+  nypop_zip.forEach(function(d, i) {
+    //if (i === 0) return;  // skip the first line in the population data
+    popdata_zip.set(d.zip, d.population); //(zip, zip overall population)
+    //popdata_zip.set(d.zip), 
+  });
+
+
+  //County data
   population.forEach(function(d, i) {
     // skip the first line in the population data
     if (i === 0 || i === 1) return;
@@ -191,6 +271,90 @@ function ready(error, us, population, nypop) {
 			    { key: "Sunday", value: d.StartDaySun }] )
   });
 
+  //zipcode data
+  population_zip.forEach(function(d, i) {
+    if (i === 0 || i === 1) return;  // skip the first line in the population data
+    data_zip.set(d.ZipCode, +d.convo);
+    convo_data_zip.set(d.ZipCode, [{ key: "Emotional Abuse", value: d.abuse_emotional_EVER_SUM },
+                                     { key: "Physical Abuse", value: d.abuse_physical_EVER_SUM },
+                                     { key: "Anxiety", value: d.anxiety_EVER_SUM },
+                                     { key: "Bereavment", value: d.bereavement_EVER_SUM },
+                                     { key: "Bully", value: d.bully_EVER_SUM },
+                                     { key: "Depressed", value: d.depressed_EVER_SUM },
+                                     { key: "Domestic Violence", value: d.domestic_violence_EVER_SUM },
+                                     { key: "Eating", value: d.eating_EVER_SUM },
+                                     { key: "Election", value: d.election_EVER_SUM },
+                                     { key: "Family", value: d.family_EVER_SUM },
+                                     { key: "Financial", value: d.financial_EVER_SUM },
+                                     { key: "Friend", value: d.friend_EVER_SUM },
+                                     { key: "Gender/LGBT", value: d.gender_lgbtq_EVER_SUM },
+                                     { key: "Homeless", value: d.homeless_EVER_SUM },
+                                     { key: "Homicide", value: d.homicide_EVER_SUM },
+                                     { key: "Isolated", value: d.isolated_EVER_SUM },
+                                     { key: "Medical", value: d.medical_EVER_SUM },
+                                     { key: "Medication", value: d.medication_EVER_SUM },
+                                     { key: "Mental", value: d.mental_EVER_SUM },
+                                     { key: "Military", value: d.military_EVER_SUM },
+                                     { key: "Other", value: d.other_EVER_SUM },
+                                     { key: "Sexual Abuse", value: d.abuse_sexual_EVER_SUM }] )
+
+    year_data_zip.set(d.ZipCode, [{ key: "2013", value: d.StartYear2013 },
+                            { key: "2014", value: d.StartYear2014 },
+                            { key: "2015", value: d.StartYear2015 },
+                            { key: "2016", value: d.StartYear2016 },
+                            { key: "2017", value: d.StartYear2017 }] )
+
+    month_data_zip.set(d.ZipCode, [{ key: "Jan", value: d.StartMonthJan },
+                            { key: "Feb", value: d.StartMonthFeb },
+                            { key: "Mar", value: d.StartMonthMar },
+                            { key: "Apr", value: d.StartMonthApr },
+                            { key: "May", value: d.StartMonthMay },
+                            { key: "Jun", value: d.StartMonthJun },
+                            { key: "Jul", value: d.StartMonthJul },
+                            { key: "Aug", value: d.StartMonthAug },
+                            { key: "Sept", value: d.StartMonthSept },
+                            { key: "Oct", value: d.StartMonthOct },
+                            { key: "Nov", value: d.StartMonthNov },
+                            { key: "Dec", value: d.StartMonthDec }
+                            ] )
+
+    hour_data_zip.set(d.ZipCode, [
+                            { key: "1 am", value: d.StartHour1 },
+                            { key: "2 am", value: d.StartHour2 },
+                            { key: "3 am", value: d.StartHour3 },
+                            { key: "4 am", value: d.StartHour4 },
+                            { key: "5 am", value: d.StartHour5 },
+                            { key: "6 am", value: d.StartHour6 },
+                            { key: "7 am", value: d.StartHour7 },
+                            { key: "8 am", value: d.StartHour8 },
+                            { key: "9 am", value: d.StartHour9 },
+                            { key: "10 am", value: d.StartHour10 },
+                            { key: "11 am", value: d.StartHour11 },
+                            { key: "12 pm", value: d.StartHour12 },
+                            { key: "1 pm", value: d.StartHour13 },
+                            { key: "2 pm", value: d.StartHour14 },
+                            { key: "3 pm", value: d.StartHour15 },
+                            { key: "4 pm", value: d.StartHour16 },
+                            { key: "5 pm", value: d.StartHour17 },
+                            { key: "6 pm", value: d.StartHour18 },
+                            { key: "7 pm", value: d.StartHour19 },
+                            { key: "8 pm", value: d.StartHour20 },
+                            { key: "9 pm", value: d.StartHour21 },
+                            { key: "10 pm", value: d.StartHour21 },
+                            { key: "11 pm", value: d.StartHour23 },
+                            { key: "12 am", value: d.StartHour0 }
+                            ] )
+
+    day_data_zip.set(d.ZipCode, [{ key: "Monday", value: d.StartDayMon },
+                            { key: "Tuesday", value: d.StartDayTues },
+                            { key: "Wednesday", value: d.StartDayWed },
+                            { key: "Thursday", value: d.StartDayThurs },
+                            { key: "Friday", value: d.StartDayFri },
+                            { key: "Saturday", value: d.StartDaySat },
+                            { key: "Sunday", value: d.StartDaySun }] )
+  //})
+  });
+
   //get the data type radio button
   var typeSelect = document.getElementsByName("type");
   for (var i=0; i<typeSelect.length; i++){
@@ -200,13 +364,19 @@ function ready(error, us, population, nypop) {
   }
 
   // Convert the topojson to an array of GeoJSON counties
-  var counties = topojson.feature(us, us.objects.counties);
+   counties = topojson.feature(us, us.objects.counties);
+
+  // Convert the topojson to an array of GeoJSON counties
+   zips = topojson.feature(us_zip, us_zip.objects.zip_codes_for_the_usa);
 
   // Get NY counties as array of GeoJSON features
-  var newyork = counties.features.filter(function(d) { return d.properties.STATEFP === '36' })
+   newyork = counties.features.filter(function(d) { return d.properties.STATEFP === '36' })
+
+  // Get NY zips as array of GeoJSON features
+   newyork_zip = zips.features.filter(function(d) { return d.properties.state === 'NY' })
 
   // Make the population & pie-chart data easy to query by FIPS code
-  var pieData = d3.map();
+  //var pieData = d3.map();
 
   newyork.forEach(function(d, i) {
     var conversations = data.get(d.properties.GEOID); //number of conversations
@@ -215,7 +385,24 @@ function ready(error, us, population, nypop) {
     d.conversation = conversations; // add conversations to this data structure
   })
 
+  newyork_zip.forEach(function(d, i) {
+    var conversations = data_zip.get(d.properties.zip); //number of conversations
+    var ny_pops = popdata_zip.get(d.properties.zip); //absolute population
+    d.convoDensity = conversations / ny_pops; // conversations per population
+    d.conversation = conversations; // add conversations to this data structure
+    d.population = ny_pops;
+    pieData_zips.set(d.properties.zip, [{ key: "population", value: conversations / 100 },
+                                     { key: "density", value: d.convoDensity }] )
+  })
+
   projection.fitExtent([[10,10],[960 - 20, 500 - 20]], { type: "FeatureCollection", features: newyork });
+
+map_counties();
+  
+}
+
+function map_counties(){
+  
 
   // Plot the individual counties
   svg.selectAll('path.county')
@@ -233,36 +420,94 @@ function ready(error, us, population, nypop) {
         }
       })
       .on('mouseover', function(d, i) {
-      	addBar(year_data.get(d.properties.GEOID), "#bar_div")
-      	addBar(month_data.get(d.properties.GEOID), "#month_div")
-      	addBar(day_data.get(d.properties.GEOID), "#day_div")
-      	addBar(hour_data.get(d.properties.GEOID), "#hour_div")
+        addPie(convo_data.get(d.properties.GEOID) );
+        addBar(year_data.get(d.properties.GEOID), "#bar_div")
+        addBar(month_data.get(d.properties.GEOID), "#month_div")
+        addBar(day_data.get(d.properties.GEOID), "#day_div")
+        addBar(hour_data.get(d.properties.GEOID), "#hour_div")
 
-      	d3.select("#tooltip")
+        d3.select("#tooltip_county")
           .style("top", d3.event.pageY + 10 + "px")
           .style("left", d3.event.pageX + 10 + "px")
           .select("#county-name-tooltip")
           .text(d.properties.NAME),
-      	d3.select("#conversations-tooltip")
+        d3.select("#conversations-tooltip")
           .text(function() {
-        	    return d3.format(",d")(d.conversation)
-        	}),
+              return d3.format(",d")(d.conversation)
+          }),
         d3.select('#density-tooltip')
           .text(function(){
             return d3.format(".2%")(d.convoDensity);
           })
-        d3.select("#tooltip").classed("hidden", !1)
+        d3.select("#tooltip_county").classed("hidden", !1)
       })
       .on('mouseout', function(d) {
-      	d3.select(".info").html("")
-      	d3.select(this).attr('stroke-width', 0.5)
-      	d3.select("#tooltip").classed("hidden", !0)
-      	d3.select("#bar_div").selectAll("svg").remove();
-      	d3.select("#month_div").selectAll("svg").remove();
-      	d3.select("#day_div").selectAll("svg").remove();
-      	d3.select("#hour_div").selectAll("svg").remove();
-      	d3.selectAll(".legend").remove();
+        d3.select(".info").html("")
+        d3.select(this).attr('stroke-width', 0.5)
+        d3.select("#tooltip_county").classed("hidden", !0)
+        d3.select("#pie").selectAll(".arc").remove();
+        d3.select("#bar_div").selectAll("svg").remove();
+        d3.select("#month_div").selectAll("svg").remove();
+        d3.select("#day_div").selectAll("svg").remove();
+        d3.select("#hour_div").selectAll("svg").remove();
+        d3.selectAll(".legend").remove();
       });
+}
+
+function map_zips(){
+
+  //projection.fitExtent([[10,10],[960 - 20, 500 - 20]], { type: "FeatureCollection", features: newyork_zip });
+
+  console.log("Incide Map Zips");
+
+  // Plot the individual counties
+  svg.selectAll('path.county')
+      .data( newyork_zip )
+    .enter().append("path")
+      .attr("d", path)
+      .attr("class", "county")
+      .attr("stroke", "#aaa")
+      .attr("stroke-width", 1)
+      .attr("fill", function(d) { return percentScaleZip(d.convoDensity); })
+      .on('mouseover', function(d, i) {
+        addPie(convo_data_zip.get(d.properties.zip) );
+        addBar(year_data_zip.get(d.properties.zip), "#bar_div")
+        addBar(month_data_zip.get(d.properties.zip), "#month_div")
+        addBar(day_data_zip.get(d.properties.zip), "#day_div")
+        addBar(hour_data_zip.get(d.properties.zip), "#hour_div")
+
+        d3.select("#tooltip_zip")
+          .style("top", d3.event.pageY + 10 + "px")
+          .style("left", d3.event.pageX + 10 + "px")
+          .select("#county-name-tooltip")
+          .text(d.properties.name),
+        d3.select("#conversations-tooltip-zip")
+          .text(function() {
+              return d3.format(",d")(d.conversation)
+          }),
+        d3.select("#zip-name-tooltip")
+          .text(d.properties.zip),
+        d3.select("#pop-tooltip-zip")
+          .text(d.population),
+        d3.select('#density-tooltip-zip')
+          .text(function(){
+            console.log("Density is "+ d.convoDensity);
+            return d3.format(".2%")(d.convoDensity);
+          })
+        d3.select("#tooltip_zip").classed("hidden", !1)
+      })
+      .on('mouseout', function(d) {
+        d3.select(".info").html("")
+        d3.select(this).attr('stroke-width', 0.5)
+        d3.select("#tooltip_zip").classed("hidden", !0)
+        d3.select("#pie").selectAll(".arc").remove();
+        d3.select("#bar_div").selectAll("svg").remove();
+        d3.select("#month_div").selectAll("svg").remove();
+        d3.select("#day_div").selectAll("svg").remove();
+        d3.select("#hour_div").selectAll("svg").remove();
+        d3.selectAll(".legend").remove();
+      });
+
 }
 
 function addBar(data, type){
@@ -297,5 +542,74 @@ function addBar(data, type){
 	  .attr('text-anchor',"middle")
 	  .text(function(d) { return d.key; });
 }
+
+function addPie(data) {
+  
+  data.sort(function (a, b) {
+  return b.value - a.value;
+  });
+
+  var tops = data.slice(0,6)
+
+  var arc = d3.select("#pie").selectAll(".arc")
+      .data( pie(tops) )
+    .enter().append("g")
+      .attr("class", "arc")
+
+  arc.append("path")
+      .attr("fill", function(d) { return color(d.data.key); })
+      .attr("d", arcPath)
+
+  /*arc.append("text")
+      .attr("transform", function(d) { return "translate(" + label.centroid(d) + ")"; })
+      .attr("dy", "0.35em")
+      .text(function(d) { return d.data.key; })
+      .raise();*/
+
+  var legendItemSize = 10
+  var legendSpacing = 4
+
+  var legend = svg
+    .selectAll('.legend')
+    .data(color.domain())
+    .enter()
+    .append('g')
+    .attr('class', 'legend')
+    .attr('transform', (d, i) => {
+      var height = legendItemSize + legendSpacing
+      var offset = height * color.domain().length / 2
+      //var x = legendItemSize * -2;
+      //var y = (i * height) - offset
+      var x = legendItemSize * 2;
+      var y = 170+((i * height) - offset)
+      return `translate(${x}, ${y})`
+    })
+
+  legend
+    .append('rect')
+    .attr('width', legendItemSize)
+    .attr('height', legendItemSize)
+    .style('fill', color);
+
+  legend
+    .append('text')
+    .attr('x', legendItemSize + legendSpacing)
+    .attr('y', legendItemSize - legendSpacing)
+    .text((d) => d)
+}
+
+///////Tabs
+$( "#county_tab" ).click(function() {
+  d3.selectAll("path.county").remove();
+  map_counties();
+});
+
+$( "#zip_tab" ).click(function() {
+  console.log("Clicked on Zip tab");
+  d3.selectAll("path.county").remove();
+  //svg.selectAll('path.county')
+  map_zips();
+});
+
 
 </script>
