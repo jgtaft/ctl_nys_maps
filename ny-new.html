@@ -11,7 +11,7 @@
 <style>
 body {
   margin: 0;
-  background-color: #eee;
+  background-color: #eee; 
 }
 .info {
   position: absolute;
@@ -24,6 +24,8 @@ body {
     <div><h4><span id="county-name-tooltip">100</span> County</h4></div>
     <div><strong>Total Number of Conversations:</strong> <span id="conversations-tooltip">200</span></div>
     <div><strong>Conversation Density:</strong> <span id="density-tooltip">200</span></div>
+    <div><strong># of MH Resources:</strong> <span id="resources-tooltip">200</span></div>
+    <div><strong>MH Resources per Person:</strong> <span id="resourcesPercent-tooltip">200</span></div>
 </div>
 
 <div id="tooltip_zip" class="hidden">
@@ -51,6 +53,8 @@ body {
 <div class="info"></div>
 
 <div class="pie_div"></div>
+<div class="ui grid">
+<div class="ten wide column">
 <svg width="960" height="500" stroke="#000" stroke-linejoin="round" stroke-linecap="round">
   <defs>
     <filter id="blur">
@@ -58,6 +62,22 @@ body {
     </filter>
   </defs>
 </svg>
+</div>
+
+<div class="five wide column">
+  <div class="ui message">
+  <div class="header">
+    Mapping <i>Crisis Text Line</i> Use and Mental Health Resources in New York State
+  </div>
+  <p>Mental health disorders, such as anxiety and depression, are common, affecting a quarter of the US population (26.4%), often with onset in adolescence. Though prevalence rates are similar, those living in rural areas are less likely to receive mental health treatment than urban dwellers. Technologically-mediated crisis supports, such as <a href="https://www.crisistextline.org/">Crisis Text Line (CTL)</a>, may complement face-to-face therapeutic interventions by supplementing limited, existing local resources.</p>
+
+  <p>From 2013 – 2017, just over 25,000 unique NYS residents engaged with CTL, with a dramatically increasing number of contacts from 2013 to 2017. Depression (11.8%), suicidal thoughts (8.2%), and anxiety (8.1%) were the most commonly discussed issues. Most NYS CTL contacts occurred during the summer months (June, July, August), at the start of the week (Monday – Wednesday), and during the late night/early morning hours (1 – 4 AM).</p>
+
+  <p>Scroll over the map to the left to gain insights about CTL use within specific geographic regions.</p>
+</div>
+</div>
+</div>
+
 <div id="bar_div"></div>
 <div id="month_div"></div>
 <div id="day_div"></div>
@@ -77,6 +97,7 @@ var year_data = d3.map();
 var month_data = d3.map();
 var day_data = d3.map();
 var hour_data = d3.map();
+var county_mh_data = d3.map();
 
 // Make the population data easy to query by FIPS code
 var data_zip = d3.map();
@@ -134,20 +155,18 @@ var radius = 80;
 var pie = d3.pie()
     .sort(null)
     .value(function(d) { return d.value; });
-
 var donutHoleRadius = radius * 0.5
-
 var arcPath = d3.arc()
     .outerRadius(radius)
     .innerRadius(radius - donutHoleRadius);
-
 var label = d3.arc()
     .outerRadius(radius - 40)
     .innerRadius(radius - 40);
 
 svg.append("g")
     .attr('id', "pie")
-    .attr('transform', 'translate(' + [radius + 160, radius + 20] + ')')
+    //.attr('transform', 'translate(' + [radius + 160, radius + 20] + ')')
+    .attr('transform', 'translate(' + [25, 0] + ')')
 
 // Load the topojson and the population data
 var counties = "https://raw.githubusercontent.com/umbcvis/classes/master/class-14/counties.json";
@@ -156,19 +175,22 @@ var population = "CTL AGG County_4YearsOnlyv1.csv" ;
 var population_zip = "http://difranzo.com/ctl/CTL_AGG_ZIPCODE_4YearsOnly.csv" ;
 var nypop = "population.json" ;
 var nypop_zip = "nys_pop_zip.json" ;
+var county_mh = "CTL_County_MH_Res.csv" ;
+
 
 d3.queue()
   .defer(d3.json, counties)
   .defer(d3.json, zip)
   .defer(d3.csv, population)
   .defer(d3.csv, population_zip)
+  .defer(d3.csv, county_mh)
   .defer(d3.json, nypop)
   .defer(d3.json, nypop_zip)
   .await(ready);
 //addLegend();
 
 // Wait for the data to arrive, then begin processing
-function ready(error, us, us_zip, population, population_zip, nypop, nypop_zip) {
+function ready(error, us, us_zip, population, population_zip, county_mh_csv, nypop, nypop_zip) {
   if (error) throw error;
 
 
@@ -184,6 +206,12 @@ function ready(error, us, us_zip, population, population_zip, nypop, nypop_zip) 
     //popdata_zip.set(d.zip), 
   });
 
+  
+  county_mh_csv.forEach(function(d,i){
+    if (i === 0 || i === 1) return;
+    county_mh_data.set(d.FIPS, [{key:"Resources", value: d.NumResources},
+      {key:"Per Capita MH Resources", value: d.PerCapitaMHResources}]);
+  });
 
   //County data
   population.forEach(function(d, i) {
@@ -191,6 +219,7 @@ function ready(error, us, us_zip, population, population_zip, nypop, nypop_zip) 
     if (i === 0 || i === 1) return;
     //create dataset of (FIPS, # of conversations)
     data.set(d.FIPS, +d.convo);
+
     //number of each concern by FIPS
     convo_data.set(d.FIPS, [{ key: "Emotional Abuse", value: d.abuse_emotional_EVER_SUM },
 				     { key: "Physical Abuse", value: d.abuse_physical_EVER_SUM },
@@ -383,6 +412,8 @@ function ready(error, us, us_zip, population, population_zip, nypop, nypop_zip) 
     var ny_pops = popdata.get(d.properties.GEOID); //absolute population
     d.convoDensity = conversations / ny_pops; // conversations per population
     d.conversation = conversations; // add conversations to this data structure
+    d.resources = county_mh_data.get(d.properties.GEOID)[0].value;
+    d.percentRes = county_mh_data.get(d.properties.GEOID)[1].value;
   })
 
   newyork_zip.forEach(function(d, i) {
@@ -439,18 +470,29 @@ function map_counties(){
           .text(function(){
             return d3.format(".2%")(d.convoDensity);
           })
+        //resources
+        d3.select('#resources-tooltip')
+          .text(function(){
+            return d3.format(",d")(d.resources);
+          })
+          //percentRes
+        d3.select('#resourcesPercent-tooltip')
+          .text(function(){
+            return d3.format(".2%")(d.percentRes);
+          })
         d3.select("#tooltip_county").classed("hidden", !1)
       })
       .on('mouseout', function(d) {
         d3.select(".info").html("")
         d3.select(this).attr('stroke-width', 0.5)
         d3.select("#tooltip_county").classed("hidden", !0)
-        d3.select("#pie").selectAll(".arc").remove();
+        d3.select("#pie").selectAll(".bar").remove();
+        d3.select("#pie").selectAll(".label").remove();
         d3.select("#bar_div").selectAll("svg").remove();
         d3.select("#month_div").selectAll("svg").remove();
         d3.select("#day_div").selectAll("svg").remove();
         d3.select("#hour_div").selectAll("svg").remove();
-        d3.selectAll(".legend").remove();
+        d3.selectAll(".legend").remove(); 
       });
 }
 
@@ -466,7 +508,7 @@ function map_zips(){
     .enter().append("path")
       .attr("d", path)
       .attr("class", "county")
-      .attr("stroke", "#aaa")
+      .attr("stroke", "#000")
       .attr("stroke-width", 1)
       .attr("fill", function(d) { return percentScaleZip(d.convoDensity); })
       .on('mouseover', function(d, i) {
@@ -500,7 +542,8 @@ function map_zips(){
         d3.select(".info").html("")
         d3.select(this).attr('stroke-width', 0.5)
         d3.select("#tooltip_zip").classed("hidden", !0)
-        d3.select("#pie").selectAll(".arc").remove();
+        d3.select("#pie").selectAll(".bar").remove();
+        d3.select("#pie").selectAll(".label").remove();
         d3.select("#bar_div").selectAll("svg").remove();
         d3.select("#month_div").selectAll("svg").remove();
         d3.select("#day_div").selectAll("svg").remove();
@@ -549,8 +592,43 @@ function addPie(data) {
   return b.value - a.value;
   });
 
-  var tops = data.slice(0,6)
+  var tops = data.slice(0,6);
+  tops = tops.reverse(); 
 
+  //top topic bars
+  var topic_x = d3.scaleLinear().range([0, 200]);
+  var y = d3.scaleBand().range([150, 0]);
+  topic_x.domain([0, d3.max(tops, function(d) { return d.value; })]);
+  y.domain(tops.map(function(d) { return d.key; })).padding(0.1);
+
+
+
+  var bar_svg = d3.select("#pie");
+  bar_svg.selectAll(".bar")
+        .data(tops)
+      .enter().append("rect")
+        .attr("class", "bar")
+        .attr("x", 0)
+        .attr("height", y.bandwidth())
+        .attr("fill", function(d) { return color(d.key); })
+        .attr("y", function(d) { return y(d.key); })
+        .attr("width", function(d) { return topic_x(d.value); });
+
+  bar_svg.selectAll(".text")
+    .data(tops)
+    .enter()
+    .append("text")
+    .attr("class","label")
+    //.attr("x", function(d) { return (x(d.key) + (x(d.key)/2)); })
+    .attr("x", 15)
+    .attr("y", function(d) { return y(d.key) + 5; })
+    .attr("dy", ".75em")
+    .attr("fill", "black")
+    .attr('text-anchor',"left")
+    .text(function(d) { return d.key; });
+
+
+  /*
   var arc = d3.select("#pie").selectAll(".arc")
       .data( pie(tops) )
     .enter().append("g")
@@ -564,7 +642,7 @@ function addPie(data) {
       .attr("transform", function(d) { return "translate(" + label.centroid(d) + ")"; })
       .attr("dy", "0.35em")
       .text(function(d) { return d.data.key; })
-      .raise();*/
+      .raise();*
 
   var legendItemSize = 10
   var legendSpacing = 4
@@ -596,6 +674,8 @@ function addPie(data) {
     .attr('x', legendItemSize + legendSpacing)
     .attr('y', legendItemSize - legendSpacing)
     .text((d) => d)
+    */
+
 }
 
 ///////Tabs
