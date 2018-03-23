@@ -172,7 +172,7 @@ svg.append("g")
 var counties = "https://raw.githubusercontent.com/umbcvis/classes/master/class-14/counties.json";
 var zip = "zips_us_topo.json";
 var population = "CTL AGG County_4YearsOnlyv1.csv" ;
-var population_zip = "http://difranzo.com/ctl/CTL_AGG_ZIPCODE_4YearsOnly.csv" ;
+var population_zip = "CTL_AGG_ZIPCODE_4YearsOnly.csv" ;
 var nypop = "population.json" ;
 var nypop_zip = "nys_pop_zip.json" ;
 var county_mh = "CTL_County_MH_Res.csv" ;
@@ -498,12 +498,12 @@ function map_counties(){
 
 function map_zips(){
 
-  //projection.fitExtent([[10,10],[960 - 20, 500 - 20]], { type: "FeatureCollection", features: newyork_zip });
+  projection.fitExtent([[10,10],[960 - 20, 500 - 20]], { type: "FeatureCollection", features: newyork_zip });
 
   console.log("Incide Map Zips");
 
   // Plot the individual counties
-  svg.selectAll('path.county')
+  svg.selectAll("path.county")
       .data( newyork_zip )
     .enter().append("path")
       .attr("d", path)
